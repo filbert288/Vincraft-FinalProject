@@ -1,48 +1,108 @@
-
 <?php
 session_start();
 include "db_connect.php";
 
-if(!isset($_SESSION['userid']) || $_SESSION['role'] !== 'crafter'){
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'crafter') {
     header("Location: login.php");
     exit;
 }
 
-$userID = $_SESSION['userid'];
+$catQuery = mysqli_query($conn, "SELECT * FROM Category");
 
-if($_SERVER['REQUEST_METHOD'] === 'POST'){
 
-    $postID = "P" . time() . rand(100,999);
-    $title  = $_POST['title'];
-    $desc   = $_POST['description'];
-    $cat    = $_POST['category'];
-    $video  = $_POST['video'];
+function generatePostID($conn) {
+    $q = mysqli_query($conn, "SELECT MAX(PostID) AS lastID FROM Post");
+    $row = mysqli_fetch_assoc($q);
 
-    if(empty($_FILES['thumb']['name'])) exit;
+    if (!$row['lastID']) {
+        return "P00001";
+    }
 
-    $allowed = ['jpg','jpeg','png','webp'];
-    $ext = strtolower(pathinfo($_FILES['thumb']['name'], PATHINFO_EXTENSION));
-    if(!in_array($ext, $allowed)) exit;
+    $num = intval(substr($row['lastID'], 1)) + 1;
 
-    $dir = "uploads/$userID/$postID/";
-    if(!is_dir($dir)) mkdir($dir, 0777, true);
+    if ($num > 99999) {
+        die("Post limit reached");
+    }
 
-    $thumb = $dir . "thumb.$ext";
-    move_uploaded_file($_FILES['thumb']['tmp_name'], $thumb);
+    return "P" . str_pad($num, 5, "0", STR_PAD_LEFT);
+}
 
-    $stmt = $conn->prepare("
-        INSERT INTO posts
-        (PostID, UserID, CategoryID, PostTitle, PostDesc, VideoLink, Thumbnail, CreatedAt)
-        VALUES (?,?,?,?,?,?,?,NOW())
-    ");
-    $stmt->bind_param(
-        "sssssss",
-        $postID, $userID, $cat, $title, $desc, $video, $thumb
-    );
-    $stmt->execute();
+$error = "";
 
-    header("Location: post_detail.php?id=$postID");
-    exit;
+if (isset($_POST['publish'])) {
+
+    $userID     = $_SESSION['user_id'];
+    $postID     = generatePostID($conn);
+    $title      = trim($_POST['title']);
+    $categoryID = $_POST['category'];
+    $desc       = trim($_POST['description']);
+    $videoLink  = trim($_POST['video_link']);
+
+    $file = $_FILES['thumbnail'];
+
+    
+    if (strlen($title) < 5 || strlen($title) > 75) {
+        $error = "Title must be between 5 and 75 characters.";
+    } elseif (empty($categoryID)) {
+        $error = "Please select a category.";
+    } elseif (strlen($desc) < 15 || strlen($desc) > 250) {
+        $error = "Description must be between 15 and 250 characters.";
+    } elseif ($file['error'] === 4) {
+        $error = "Thumbnail is required.";
+    } else {
+
+
+        $allowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        $fileExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+        if (!in_array($fileExt, $allowedExt)) {
+            $error = "Invalid image type.";
+        } elseif ($file['size'] > 150 * 1024 * 1024) {
+            $error = "Image exceeds 150MB.";
+        } else {
+
+        
+            $targetDir = "assets/uploads/$userID/$postID/";
+            if (!is_dir($targetDir)) {
+                mkdir($targetDir, 0777, true);
+            }
+
+            $newFileName = "thumb." . $fileExt;
+            $targetPath  = $targetDir . $newFileName;
+            $dbPath      = "assets/uploads/$userID/$postID/$newFileName";
+
+           
+            if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+
+                $stmt = $conn->prepare("
+                    INSERT INTO Post 
+                    (PostID, UserID, CategoryID, PostTitle, PostDesc, PostVideo, PostImage, PostUpload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                ");
+
+                $stmt->bind_param(
+                    "sssssss",
+                    $postID,
+                    $userID,
+                    $categoryID,
+                    $title,
+                    $desc,
+                    $videoLink,
+                    $dbPath
+                );
+
+                if ($stmt->execute()) {
+                    header("Location: post_detail.php?id=$postID");
+                    exit;
+                } else {
+                    $error = "Database Error: " . $stmt->error;
+                }
+
+            } else {
+                $error = "Failed to upload image.";
+            }
+        }
+    }
 }
 ?>
 
@@ -51,46 +111,54 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VinCraft - Upload Post</title>
+    <title>Upload-Post</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <nav>
         <a class="logo">VinCraft Community</a>
+        
         <a href="home_crafter.php">Home</a>
         <a href="browse_crafter.php">Browse Posts</a>
         <a href="upload_post.php">Upload Post</a>
         <a href="my_post.php">My Post</a>
         <a href="logout.php">Logout</a>
-        <a class="welcome"><b>Welcome, <?= $_SESSION['username'] ?>!</b></a>
+        
+        <?php if(isset($_SESSION['username'])): ?>
+            <a class="welcome"><b>Welcome, <?php echo $_SESSION['username']; ?>!</b></a>
+        <?php endif; ?>
     </nav>
 
-    <h2>Upload Post</h2>
+    <div id="upload-form-wrapper">
+        <h2>Upload Post</h2>
+        <p class="subtitle">Share your creation with the community</p>
+        
+        <form method="POST" enctype="multipart/form-data">
+             <label>Title</label>
+    <input type="text" name="title">
 
-    <form id="upload-form" method="POST" enctype="multipart/form-data">
-        <input name="title" placeholder="Post Title" required><br>
+    <label>Category</label>
+    <select name="category" required>
+        <option value="">-- choose --</option>
+        <?php while ($c = mysqli_fetch_assoc($catQuery)) : ?>
+            <option value="<?= $c['CategoryID']; ?>">
+                <?= htmlspecialchars($c['CategoryName']); ?>
+            </option>
+        <?php endwhile; ?>
+    </select>
 
-        <textarea name="description" placeholder="Description" required></textarea><br>
+    <label>Description</label>
+    <textarea name="description"></textarea>
 
-        <select name="category" required>
-            <?php
-            $cat = $conn->query("SELECT * FROM categories");
-            while($c = $cat->fetch_assoc()){
-                echo "<option value='{$c['CategoryID']}'>{$c['CategoryName']}</option>";
-            }
-            ?>
-        </select><br>
+    <label>Video Link</label>
+    <input type="text" name="video_link">
 
-        <input name="video" placeholder="Video link (optional)"><br>
-        <input type="file" name="thumb" accept="image/*" required><br>
+    <label>Thumbnail</label>
+    <input type="file" name="thumbnail">
 
-        <button type="submit">Upload</button>
-    </form>
-
-    <footer>
-        © 2025 VinCraft Community. All rights reserved
-    </footer>
-
-<script src="script.js"></script>
+    <button type="submit" name="publish">Publish</button>
+        </form>
+    </div>
+    <script src="script.js"></script>
 </body>
 </html>
