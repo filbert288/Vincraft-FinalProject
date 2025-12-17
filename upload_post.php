@@ -134,29 +134,29 @@ if (isset($_POST['publish'])) {
         <p class="subtitle">Share your creation with the community</p>
         
         <form method="POST" enctype="multipart/form-data">
-             <label>Title</label>
-    <input type="text" name="title">
+            <label>Title</label>
+            <input type="text" name="title">
+             
+            <label>Category</label>
+            <select name="category" required>
+                <option value="">-- choose --</option>
+                <?php while ($c = mysqli_fetch_assoc($catQuery)) : ?>
+                    <option value="<?= $c['CategoryID']; ?>">
+                        <?= htmlspecialchars($c['CategoryName']); ?>
+                    </option>
+                    <?php endwhile; ?>
+                </select>
 
-    <label>Category</label>
-    <select name="category" required>
-        <option value="">-- choose --</option>
-        <?php while ($c = mysqli_fetch_assoc($catQuery)) : ?>
-            <option value="<?= $c['CategoryID']; ?>">
-                <?= htmlspecialchars($c['CategoryName']); ?>
-            </option>
-        <?php endwhile; ?>
-    </select>
+            <label>Description</label>
+            <textarea name="description"></textarea>
 
-    <label>Description</label>
-    <textarea name="description"></textarea>
+            <label>Video Link</label>
+            <input type="text" name="video_link">
 
-    <label>Video Link</label>
-    <input type="text" name="video_link">
-
-    <label>Thumbnail</label>
-    <input type="file" name="thumbnail">
-
-    <button type="submit" name="publish">Publish</button>
+            <label>Thumbnail</label>
+            <input type="file" name="thumbnail">
+            
+            <button type="submit" name="publish">Publish</button>
         </form>
     </div>
     <script src="script.js"></script>
